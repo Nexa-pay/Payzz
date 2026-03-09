@@ -16,57 +16,115 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 import random
 import json
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-
-# Configure logging
+# Configure logging FIRST
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
-    handlers=[
-        logging.FileHandler('bot.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
-# Bot Configuration
-BOT_TOKEN = os.getenv('BOT_TOKEN')
+# Print all environment variables for debugging (without full values for security)
+logger.info("=" * 60)
+logger.info("ENVIRONMENT VARIABLES CHECK:")
+logger.info(f"BOT_TOKEN exists: {'Yes' if 'BOT_TOKEN' in os.environ else 'No'}")
+logger.info(f"API_ID exists: {'Yes' if 'API_ID' in os.environ else 'No'}")
+logger.info(f"API_HASH exists: {'Yes' if 'API_HASH' in os.environ else 'No'}")
+logger.info(f"OWNER_ID exists: {'Yes' if 'OWNER_ID' in os.environ else 'No'}")
+logger.info(f"DATABASE_URL exists: {'Yes' if 'DATABASE_URL' in os.environ else 'No'}")
+logger.info("=" * 60)
+
+# Bot Configuration - Get directly from environment
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
 if not BOT_TOKEN:
-    logger.error("BOT_TOKEN not set!")
+    logger.error("❌ BOT_TOKEN not set in environment variables!")
+    # List all environment variables for debugging (without values)
+    logger.info("Available environment variables:")
+    for key in os.environ.keys():
+        if 'PASSWORD' not in key.upper() and 'SECRET' not in key.upper() and 'TOKEN' not in key.upper():
+            logger.info(f"  - {key}")
+    sys.exit(1)
+else:
+    logger.info(f"✅ BOT_TOKEN found: {BOT_TOKEN[:10]}...")
+
+# Get API_ID
+api_id_str = os.environ.get('API_ID')
+if not api_id_str:
+    logger.error("❌ API_ID not set in environment variables!")
     sys.exit(1)
 
 try:
-    ADMIN_IDS = [int(id) for id in os.getenv('ADMIN_IDS', '').split(',') if id]
-    OWNER_ID = int(os.getenv('OWNER_ID', '0'))
-    API_ID = int(os.getenv('API_ID', '0'))
-except ValueError as e:
-    logger.error(f"Invalid ID in environment variables: {e}")
+    API_ID = int(api_id_str)
+    logger.info(f"✅ API_ID found: {api_id_str[:3]}...")
+except ValueError:
+    logger.error(f"❌ API_ID is not a valid integer: {api_id_str}")
     sys.exit(1)
 
-API_HASH = os.getenv('API_HASH')
+# Get API_HASH
+API_HASH = os.environ.get('API_HASH')
 if not API_HASH:
-    logger.error("API_HASH not set!")
+    logger.error("❌ API_HASH not set in environment variables!")
     sys.exit(1)
+else:
+    logger.info(f"✅ API_HASH found: {API_HASH[:5]}...")
+
+# Get OWNER_ID
+owner_id_str = os.environ.get('OWNER_ID')
+if not owner_id_str:
+    logger.error("❌ OWNER_ID not set in environment variables!")
+    sys.exit(1)
+
+try:
+    OWNER_ID = int(owner_id_str)
+    logger.info(f"✅ OWNER_ID found: {OWNER_ID}")
+except ValueError:
+    logger.error(f"❌ OWNER_ID is not a valid integer: {owner_id_str}")
+    sys.exit(1)
+
+# Get ADMIN_IDS
+admin_ids_str = os.environ.get('ADMIN_IDS', '')
+ADMIN_IDS = []
+if admin_ids_str:
+    try:
+        ADMIN_IDS = [int(id.strip()) for id in admin_ids_str.split(',') if id.strip()]
+        logger.info(f"✅ ADMIN_IDS found: {ADMIN_IDS}")
+    except ValueError as e:
+        logger.error(f"❌ Error parsing ADMIN_IDS: {e}")
+        sys.exit(1)
 
 # Database Configuration
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///reports.db')
+DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///reports.db')
+logger.info(f"📁 Database URL: {'Set (value hidden)' if 'DATABASE_URL' in os.environ else 'Using SQLite default'}")
+
+# Clean database URL (remove any spaces)
+if DATABASE_URL and ' ' in DATABASE_URL:
+    logger.warning("⚠️ DATABASE_URL contains spaces! Cleaning...")
+    DATABASE_URL = DATABASE_URL.replace(' ', '')
+    
 if DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
 # Report Configuration
-REPORT_INTERVAL = int(os.getenv('REPORT_INTERVAL', '10'))
-MAX_REPORTS_PER_ACCOUNT = int(os.getenv('MAX_REPORTS_PER_ACCOUNT', '50'))
+REPORT_INTERVAL = int(os.environ.get('REPORT_INTERVAL', '10'))
+MAX_REPORTS_PER_ACCOUNT = int(os.environ.get('MAX_REPORTS_PER_ACCOUNT', '50'))
+
+logger.info("=" * 60)
+logger.info("✅ All critical environment variables loaded successfully!")
+logger.info("=" * 60)
 
 # Conversation states
 PHONE, CODE, PASSWORD = range(3)
 
 # Database setup
 Base = declarative_base()
-engine = create_engine(DATABASE_URL, echo=False)
-SessionLocal = sessionmaker(bind=engine)
+try:
+    engine = create_engine(DATABASE_URL, echo=False)
+    SessionLocal = sessionmaker(bind=engine)
+    logger.info("✅ Database connection successful")
+except Exception as e:
+    logger.error(f"❌ Database connection failed: {e}")
+    sys.exit(1)
 
 class User(Base):
     __tablename__ = 'users'
@@ -85,7 +143,7 @@ class Account(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer)
     phone_number = Column(String, unique=True)
-    session_string = Column(Text)  # Changed to Text for longer sessions
+    session_string = Column(Text)
     is_active = Column(Boolean, default=True)
     reports_count = Column(Integer, default=0)
     last_report_time = Column(DateTime, nullable=True)
@@ -115,9 +173,9 @@ class ReportTarget(Base):
 # Create tables
 try:
     Base.metadata.create_all(engine)
-    logger.info("Database tables created successfully")
+    logger.info("✅ Database tables created successfully")
 except Exception as e:
-    logger.error(f"Error creating database tables: {e}")
+    logger.error(f"❌ Error creating database tables: {e}")
     sys.exit(1)
 
 # Active reporting tasks
@@ -145,7 +203,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"New user added: {user.id} - {user.username}")
         
         await update.message.reply_text(
-            f"Welcome {user.first_name}!\n\n"
+            f"✅ **Bot is working!**\n\n"
+            f"Welcome {user.first_name}!\n"
             f"💰 Your Coins: {db_user.coins}\n"
             f"👤 Status: {'👑 Owner' if db_user.is_owner else '🔧 Admin' if db_user.is_admin else '👤 User'}\n\n"
             "📋 **Commands:**\n"
@@ -622,39 +681,51 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Main function to run the bot"""
-    logger.info("Starting bot...")
+    logger.info("=" * 60)
+    logger.info("🚀 Starting Telegram Report Bot...")
+    logger.info(f"🤖 Bot Token: {BOT_TOKEN[:10]}...")
+    logger.info(f"🔑 API ID: {api_id_str[:3]}...")
+    logger.info(f"👑 Owner ID: {OWNER_ID}")
+    logger.info(f"👥 Admin IDs: {ADMIN_IDS}")
+    logger.info(f"⏱️ Report Interval: {REPORT_INTERVAL}s")
+    logger.info("=" * 60)
     
-    # Create application
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Add conversation handler
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("addaccount", add_account_start)],
-        states={
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_account_phone)],
-            CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_account_code)],
-            PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_account_password)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    application.add_handler(conv_handler)
-    
-    # Add command handlers
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("myaccounts", my_accounts))
-    application.add_handler(CommandHandler("addtarget", add_target))
-    application.add_handler(CommandHandler("targets", list_targets))
-    application.add_handler(CommandHandler("startreport", start_reporting))
-    application.add_handler(CommandHandler("stopreport", stop_reporting))
-    application.add_handler(CommandHandler("coins", check_coins))
-    application.add_handler(CommandHandler("broadcast", broadcast_message))
-    application.add_handler(CommandHandler("addcoins", add_coins))
-    application.add_handler(CommandHandler("addadmin", add_admin))
-    
-    # Start the bot
-    logger.info("Bot is running! Press Ctrl+C to stop.")
-    application.run_polling()
+    try:
+        # Create application
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        # Add conversation handler
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler("addaccount", add_account_start)],
+            states={
+                PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_account_phone)],
+                CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_account_code)],
+                PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_account_password)],
+            },
+            fallbacks=[CommandHandler("cancel", cancel)],
+        )
+        application.add_handler(conv_handler)
+        
+        # Add command handlers
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("myaccounts", my_accounts))
+        application.add_handler(CommandHandler("addtarget", add_target))
+        application.add_handler(CommandHandler("targets", list_targets))
+        application.add_handler(CommandHandler("startreport", start_reporting))
+        application.add_handler(CommandHandler("stopreport", stop_reporting))
+        application.add_handler(CommandHandler("coins", check_coins))
+        application.add_handler(CommandHandler("broadcast", broadcast_message))
+        application.add_handler(CommandHandler("addcoins", add_coins))
+        application.add_handler(CommandHandler("addadmin", add_admin))
+        
+        # Start the bot
+        logger.info("✅ Bot is running! Press Ctrl+C to stop.")
+        application.run_polling()
+        
+    except Exception as e:
+        logger.error(f"❌ Fatal error: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     try:
