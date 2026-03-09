@@ -30,22 +30,24 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 COPY . .
 
 # Create necessary directories for persistent data
-RUN mkdir -p /app/data /app/logs /app/sessions && \
-    chown -R app:app /app && \
-    chmod -R 755 /app
+# Railway will mount a volume here, so we ensure the path exists
+RUN mkdir -p /app/data /app/logs /app/sessions
 
 # Create a non-root user to run the app
 RUN addgroup --system --gid 1001 app && \
-    adduser --system --uid 1001 --gid 1001 app && \
-    chown -R app:app /app
+    adduser --system --uid 1001 --gid 1001 app
 
-# Expose health check port
+# ⚠️ IMPORTANT: Set ownership AFTER creating directories and BEFORE switching user
+# This ensures the 'app' user can write to the directories where Railway volumes will be mounted.
+RUN chown -R app:app /app
+
+# Expose health check port (optional but recommended for Railway)
 EXPOSE 8080
 
 # Switch to non-root user
 USER app
 
-# Health check to keep Railway happy
+# Health check to keep Railway happy (adjust the command if needed)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import socket; socket.socket().connect(('localhost', 8080))" || exit 1
 
