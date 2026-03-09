@@ -29,16 +29,17 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 # Copy project files
 COPY . .
 
-# Create a non-root user to run the app
-RUN addgroup --system --gid 1001 app && \
-    adduser --system --uid 1001 --gid 1001 app && \
+# Create necessary directories for persistent data
+RUN mkdir -p /app/data /app/logs /app/sessions && \
     chown -R app:app /app && \
     chmod -R 755 /app
 
-# Create volume for persistent data
-VOLUME ["/app/data"]
+# Create a non-root user to run the app
+RUN addgroup --system --gid 1001 app && \
+    adduser --system --uid 1001 --gid 1001 app && \
+    chown -R app:app /app
 
-# Expose health check port (optional)
+# Expose health check port
 EXPOSE 8080
 
 # Switch to non-root user
