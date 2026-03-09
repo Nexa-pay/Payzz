@@ -1,1 +1,1 @@
-jjj
+web: python main.py
